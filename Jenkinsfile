@@ -1,21 +1,38 @@
-pipeline {
-    agent any 
-echo "Started Pipeline"
-    stages {
-        stage('Build') { 
-            steps {
-               bat "mvn clean"
-            }
-        }
-        stage('Test') { 
-            steps {
-               bat "mvn test"
-            }
-        }
-        stage('Deploy') { 
-            steps {
-             bat "mvn package"
-            }
-        }
-    }
+node {
+   def mvnHome
+   stage('Prepare') {
+      git url: 'git@github.com:arumugam1983/jenkinsMvn.git', branch: 'develop'
+      mvnHome = tool 'maven'
+   }
+   stage('Build') {
+      if (isUnix()) {
+         sh "'${mvnHome}/bin/mvn' -Dmaven.test.failure.ignore clean package"
+      } else {
+         bat(/"${mvnHome}\bin\mvn" -Dmaven.test.failure.ignore clean package/)
+      }
+   }
+   stage('Unit Test') {
+      junit '**/target/surefire-reports/TEST-*.xml'
+      archive 'target/*.jar'
+   }
+   stage('Integration Test') {
+     if (isUnix()) {
+        sh "'${mvnHome}/bin/mvn' -Dmaven.test.failure.ignore clean verify"
+     } else {
+        bat(/"${mvnHome}\bin\mvn" -Dmaven.test.failure.ignore clean verify/)
+     }
+   }
+   stage('Sonar') {
+      if (isUnix()) {
+         sh "'${mvnHome}/bin/mvn' sonar:sonar"
+      } else {
+         bat(/"${mvnHome}\bin\mvn" sonar:sonar/)
+      }
+   }
+   stage('Deploy') {
+       sh 'curl -u jenkins:jenkins -T target/**.war "http://localhost:9090/manager/text/deploy?path=/devops&update=true"'
+   }
+   stage("Smoke Test"){
+       sh "curl --retry-delay 10 --retry 5 http://localhost:9090/devops"
+   }
 }
